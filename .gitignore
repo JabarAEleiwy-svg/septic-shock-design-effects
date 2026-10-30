@@ -1,0 +1,7 @@
+# patient-level data and model files must never be committed (PhysioNet data use agreements)
+*.parquet
+*.joblib
+*.csv.gz
+*.rar
+*.zip
+results/private/
