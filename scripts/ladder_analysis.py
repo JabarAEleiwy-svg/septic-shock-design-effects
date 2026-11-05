@@ -16,6 +16,11 @@ measured relative to the outcome window?  Exactly one factor is changed between 
   Design C-P  = C without the vasopressor-derived inputs (on_pressor, s_cv, sofa_total).
   Design C-L  = C without lactate.
   Design C-PL = C without both.
+  Matched ablations at the predictive landmark (added in v2; they remove the SAME inputs from B, so that C-P/C-L/C-PL can be
+  compared with a design that has lost the same information, not only with the full B):
+  Design B-P, B-L, B-PL = B without the vasopressor-derived inputs / without lactate / without both.
+  The paired contrasts C-P minus B-P, C-L minus B-L and C-PL minus B-PL isolate the effect of the predictor window with the
+  input set held fixed.
   Model, hyper-parameters, imputation, cleaning and bootstrap are those of the primary analysis (random forest, 500 trees).
 
 Step 1 (--only_build): re-derives the predictor tables at the required landmarks from the raw sub-tables written by
@@ -47,11 +52,14 @@ ap.add_argument("--horizons", default="6,24")
 ap.add_argument("--nboot", type=int, default=1000)
 ap.add_argument("--rf_trees", type=int, default=500)
 ap.add_argument("--seed", type=int, default=42)
+ap.add_argument("--model", default="RF", choices=["RF", "LightGBM"],
+                help="learner used in every design (hyper-parameters fixed, identical to extended_analysis_v3.py); outputs go to ladder/ (RF) or ladder_lightgbm/")
 ap.add_argument("--only_build", action="store_true", help="build the landmark tables + self-check, then stop")
 ap.add_argument("--rebuild", action="store_true", help="rebuild landmark tables even if they already exist")
 args = ap.parse_args()
 OUT = args.out
-LD = os.path.join(OUT, "ladder"); os.makedirs(LD, exist_ok=True)
+LD = os.path.join(OUT, "ladder" if args.model == "RF" else "ladder_" + args.model.lower()); os.makedirs(LD, exist_ok=True)
+FEAT_DIR = os.path.join(OUT, "ladder"); os.makedirs(FEAT_DIR, exist_ok=True)   # landmark feature tables are shared by all learners
 HORIZONS = [int(x) for x in args.horizons.split(",") if x.strip()]
 B, SEED = args.nboot, args.seed
 LOG = open(os.path.join(LD, "ladder_log.txt"), "w")
@@ -62,7 +70,7 @@ def say(*a):
 
 
 say("python", platform.python_version(), "| duckdb", duckdb.__version__, "| pandas", pd.__version__)
-say(f"horizons={HORIZONS} nboot={B} rf_trees={args.rf_trees}")
+say(f"horizons={HORIZONS} nboot={B} rf_trees={args.rf_trees} model={args.model}")
 
 VARS = ["hr", "rr", "spo2", "sbp", "dbp", "map", "temp"]
 M_LAB = {"creat": 50912, "bili": 50885, "plt": 51265, "lactate": 50813, "wbc": 51301, "hgb": 51222,
@@ -200,7 +208,7 @@ say(f"MIMIC stays {len(fm_raw):,} | eICU stays {len(fe_raw):,} | {len(FEATS)} fe
 KS = sorted(set([1] + [H + 1 for H in HORIZONS]))
 FM, FE = {}, {}
 for k in KS:
-    pm, pe = f"{LD}/features_mimic_k{k}.parquet", f"{LD}/features_eicu_k{k}.parquet"
+    pm, pe = f"{FEAT_DIR}/features_mimic_k{k}.parquet", f"{FEAT_DIR}/features_eicu_k{k}.parquet"
     if k == 1:           # primary tables, with a self-check of the builders
         for tag, builder, raw, path in [("MIMIC k=1", build_mimic, fm_raw, pm), ("eICU k=1", build_eicu, fe_raw, pe)]:
             if args.rebuild or not os.path.exists(path):
@@ -249,9 +257,17 @@ def pct(v): v = v[~np.isnan(v)]; return (np.percentile(v, 2.5), np.percentile(v,
 def fmt(pt, lo, hi): return f"{pt:.3f} ({lo:.3f}-{hi:.3f})"
 
 
+def make_learner():
+    if args.model == "RF":     # primary analysis
+        return make_pipeline(SimpleImputer(strategy="median", add_indicator=True),
+                             RandomForestClassifier(n_estimators=args.rf_trees, min_samples_leaf=5, class_weight="balanced_subsample", n_jobs=-1, random_state=42))
+    import lightgbm as lgb     # same fixed hyper-parameters as make_model("LightGBM") in extended_analysis_v3.py; NaN handled natively
+    return lgb.LGBMClassifier(n_estimators=400, learning_rate=0.03, num_leaves=31, min_child_samples=40, subsample=0.8, subsample_freq=1,
+                              colsample_bytree=0.8, reg_lambda=1.0, random_state=42, n_jobs=-1, verbose=-1)
+
+
 def fit_predict(train, ytr, cols, tests):
-    m = make_pipeline(SimpleImputer(strategy="median", add_indicator=True),
-                      RandomForestClassifier(n_estimators=args.rf_trees, min_samples_leaf=5, class_weight="balanced_subsample", n_jobs=-1, random_state=42))
+    m = make_learner()
     m.fit(train[cols], ytr)
     return [m.predict_proba(t[cols])[:, 1] for t in tests]
 
@@ -270,9 +286,12 @@ for H in HORIZONS:
         d = store[k]; return d[d.stay_id.isin(keep)].sort_values("stay_id").reset_index(drop=True)
 
     D = {"B": (1, FEATS), "C": (kC, FEATS), "C-P": (kC, [c for c in FEATS if c not in PRESS]),
-         "C-L": (kC, [c for c in FEATS if c not in LAC]), "C-PL": (kC, [c for c in FEATS if c not in PRESS + LAC])}
+         "C-L": (kC, [c for c in FEATS if c not in LAC]), "C-PL": (kC, [c for c in FEATS if c not in PRESS + LAC]),
+         "B-P": (1, [c for c in FEATS if c not in PRESS]), "B-L": (1, [c for c in FEATS if c not in LAC]),
+         "B-PL": (1, [c for c in FEATS if c not in PRESS + LAC])}
     LABEL = {"B": "B: predictors end 1 h after index (primary design)", "C": f"C: predictors end with the {H}-h outcome window",
-             "C-P": "C-P: C without vasopressor-derived inputs", "C-L": "C-L: C without lactate", "C-PL": "C-PL: C without both"}
+             "C-P": "C-P: C without vasopressor-derived inputs", "C-L": "C-L: C without lactate", "C-PL": "C-PL: C without both",
+             "B-P": "B-P: B without vasopressor-derived inputs", "B-L": "B-L: B without lactate", "B-PL": "B-PL: B without both"}
     sets = {}
     for k in sorted(set(v[0] for v in D.values())):
         m_, e_ = sub(FM, k, keepM), sub(FE, k, keepE)
@@ -314,6 +333,10 @@ for H in HORIZONS:
             for mn, fn in (("AUROC", roc_auc_score), ("AUPRC", average_precision_score)):
                 d = met[name][mn] - met["B"][mn]; pt = fn(y, P[part][name]) - fn(y, P[part]["B"]); lo, hi = pct(d)
                 diffs.append({"H": H, "dataset": nm, "comparison": f"{name} minus B", "metric": mn, "difference": pt, "lo": lo, "hi": hi, "formatted": fmt(pt, lo, hi)})
+        for a_, b_ in (("C-P", "B-P"), ("C-L", "B-L"), ("C-PL", "B-PL")):   # window effect with the input set held fixed
+            for mn, fn in (("AUROC", roc_auc_score), ("AUPRC", average_precision_score)):
+                d = met[a_][mn] - met[b_][mn]; pt = fn(y, P[part][a_]) - fn(y, P[part][b_]); lo, hi = pct(d)
+                diffs.append({"H": H, "dataset": nm, "comparison": f"{a_} minus {b_} (matched inputs)", "metric": mn, "difference": pt, "lo": lo, "hi": hi, "formatted": fmt(pt, lo, hi)})
         for name in ("B", "C"):              # how much of the outcome information is already inside the predictors
             k = D[name][0]; d = sets[k][part]; ev_ = y == 1
             exposure.append({"H": H, "dataset": nm, "design": name, "events": int(y.sum()),
@@ -335,8 +358,8 @@ say("\n=== overlap exposure ===")
 say(pd.DataFrame(exposure).round(1).to_string(index=False))
 
 # figure
-codes = ["B", "C", "C-P", "C-L", "C-PL"]
-fig, axs = plt.subplots(len(HORIZONS), 2, figsize=(11, 3.6 * len(HORIZONS)), squeeze=False, sharey=True)
+codes = ["B", "B-P", "B-L", "B-PL", "C", "C-P", "C-L", "C-PL"]
+fig, axs = plt.subplots(len(HORIZONS), 2, figsize=(13, 3.6 * len(HORIZONS)), squeeze=False, sharey=True)
 for i, H in enumerate(HORIZONS):
     for j, nm in enumerate(["MIMIC temporal test", "eICU external"]):
         d = res[(res.H == H) & (res.dataset == nm) & (res.metric == "AUROC")].set_index("code")

@@ -11,3 +11,4 @@ duckdb==1.3.2
 pyarrow
 matplotlib
 joblib
+torch   # sequence_analysis.py (tested with 2.15.0, CPU); on Colab it is preinstalled
