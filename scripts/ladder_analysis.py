@@ -54,11 +54,19 @@ ap.add_argument("--rf_trees", type=int, default=500)
 ap.add_argument("--seed", type=int, default=42)
 ap.add_argument("--model", default="RF", choices=["RF", "LightGBM"],
                 help="learner used in every design (hyper-parameters fixed, identical to extended_analysis_v3.py); outputs go to ladder/ (RF) or ladder_lightgbm/")
+ap.add_argument("--outcome", default="primary", choices=["primary", "vaso_any", "vaso_2h", "primary_kept_vaso_any", "primary_kept_vaso_2h"],
+                help="outcome definition (sensitivity analysis, see outcome_definitions.py): primary = vasopressor and lactate > 2 (manuscript); "
+                     "vaso_any / vaso_2h = vasopressor only (any / at least 2 consecutive hours), no lactate in the outcome. Same stays, same features; only the label "
+                     "changes. Requires the landmark tables of the primary run in ladder/. Outputs go to ladder_outcome_<name>[_lightgbm]/. "
+                     "primary_kept_<rule> is the CONTROL: the primary outcome (vasopressor and lactate > 2) on exactly the stays that remain under <rule>, so that the effect of the "
+                     "stay selection can be separated from the effect of the outcome definition.")
 ap.add_argument("--only_build", action="store_true", help="build the landmark tables + self-check, then stop")
 ap.add_argument("--rebuild", action="store_true", help="rebuild landmark tables even if they already exist")
 args = ap.parse_args()
 OUT = args.out
-LD = os.path.join(OUT, "ladder" if args.model == "RF" else "ladder_" + args.model.lower()); os.makedirs(LD, exist_ok=True)
+LD = os.path.join(OUT, "ladder" if args.model == "RF" else "ladder_" + args.model.lower())
+if args.outcome != "primary": LD = os.path.join(OUT, "ladder_outcome_" + args.outcome + ("" if args.model == "RF" else "_" + args.model.lower()))
+os.makedirs(LD, exist_ok=True)
 FEAT_DIR = os.path.join(OUT, "ladder"); os.makedirs(FEAT_DIR, exist_ok=True)   # landmark feature tables are shared by all learners
 HORIZONS = [int(x) for x in args.horizons.split(",") if x.strip()]
 B, SEED = args.nboot, args.seed
@@ -70,7 +78,7 @@ def say(*a):
 
 
 say("python", platform.python_version(), "| duckdb", duckdb.__version__, "| pandas", pd.__version__)
-say(f"horizons={HORIZONS} nboot={B} rf_trees={args.rf_trees} model={args.model}")
+say(f"horizons={HORIZONS} nboot={B} rf_trees={args.rf_trees} model={args.model} outcome={args.outcome}")
 
 VARS = ["hr", "rr", "spo2", "sbp", "dbp", "map", "temp"]
 M_LAB = {"creat": 50912, "bili": 50885, "plt": 51265, "lactate": 50813, "wbc": 51301, "hgb": 51222,
@@ -197,6 +205,54 @@ fm_raw = pd.read_parquet(f"{OUT}/features_mimic.parquet")
 fe_raw = pd.read_parquet(f"{OUT}/features_eicu.parquet")
 cm = pd.read_parquet(f"{OUT}/cohort_final_mimic.parquet")[["stay_id", "index_time", "outtime"]]
 ce = pd.read_parquet(f"{OUT}/cohort_eicu.parquet")[["stay_id", "outoffset"]]
+if args.outcome != "primary":
+    # ---- sensitivity analysis of the outcome definition: same stays, same predictors, only the label changes -------------
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import outcome_definitions as od
+    if args.rebuild: sys.exit("--rebuild is not allowed with --outcome (the landmark tables of the primary run are reused unchanged).")
+    for k_ in sorted(set([1] + [H + 1 for H in HORIZONS])):
+        for ds_ in ("mimic", "eicu"):
+            if not os.path.exists(f"{FEAT_DIR}/features_{ds_}_k{k_}.parquet"):
+                sys.exit(f"Run the primary ladder_analysis.py first (landmark table features_{ds_}_k{k_}.parquet is missing).")
+    con_o = newcon(); log_o = []
+    def _l(*a):
+        m = " ".join(str(x) for x in a); say(m); log_o.append(m)
+    # MIMIC-IV: hr is a timestamp; hours_to_shock = hours from index_time
+    src_m = f"read_parquet('{OUT}/sofa_hourly.parquet')"
+    say(f"[MIMIC] stays with a gap in the hourly grid (must be 0): {od.grid_gaps(con_o, src_m, True)}")
+    idx_m = cm.set_index("stay_id").index_time
+    chk = od.relabel(fm_raw, idx_m, od.onset_frame(con_o, src_m, "primary", True), "primary re-derived (check)", log=lambda *a: None)
+    same = (chk.shape[0] == fm_raw.shape[0]) and np.array_equal(chk.shock.values, fm_raw.shock.values) and \
+           np.allclose(chk.hours_to_shock.fillna(-1).values, fm_raw.hours_to_shock.fillna(-1).values)
+    say(f"[MIMIC] primary outcome re-derived from sofa_hourly reproduces shock and hours_to_shock of the primary features: {'OK' if same else 'MISMATCH - STOP'}")
+    if not same: sys.exit("Outcome derivation does not reproduce the primary labels; do not use this run.")
+    CONTROL = args.outcome.startswith("primary_kept_"); RULE = args.outcome.replace("primary_kept_", "") if CONTROL else args.outcome
+    fm_prim = fm_raw.copy()
+    fm_raw = od.relabel(fm_raw, idx_m, od.onset_frame(con_o, src_m, RULE, True), "MIMIC " + RULE, log=_l)
+    if CONTROL: fm_raw = fm_prim[fm_prim.stay_id.isin(fm_raw.stay_id)].copy(); _l(f"[MIMIC control] primary outcome kept on the {len(fm_raw):,} stays that remain under {RULE}; events {int(fm_raw.shock.sum()):,}")
+    # eICU-CRD: hr is an integer hour; index hour = hours_icu_to_pred - 1
+    src_e = f"read_parquet('{OUT}/sofa_hourly_eicu.parquet')"
+    say(f"[eICU] stays with a gap in the hourly grid (must be 0): {od.grid_gaps(con_o, src_e, False)}")
+    idx_e = (fe_raw.set_index("stay_id").hours_icu_to_pred - 1)
+    chk = od.relabel(fe_raw, idx_e, od.onset_frame(con_o, src_e, "primary", False), "primary re-derived (check)", log=lambda *a: None)
+    same = (chk.shape[0] == fe_raw.shape[0]) and np.array_equal(chk.shock.values, fe_raw.shock.values) and \
+           np.allclose(chk.hours_to_shock.fillna(-1).values, fe_raw.hours_to_shock.fillna(-1).values)
+    say(f"[eICU] primary outcome re-derived from sofa_hourly_eicu reproduces shock and hours_to_shock of the primary features: {'OK' if same else 'MISMATCH - STOP'}")
+    if not same: sys.exit("Outcome derivation does not reproduce the primary labels; do not use this run.")
+    fe_prim = fe_raw.copy()
+    fe_raw = od.relabel(fe_raw, idx_e, od.onset_frame(con_o, src_e, RULE, False), "eICU " + RULE, log=_l)
+    if CONTROL: fe_raw = fe_prim[fe_prim.stay_id.isin(fe_raw.stay_id)].copy(); _l(f"[eICU control] primary outcome kept on the {len(fe_raw):,} stays that remain under {RULE}; events {int(fe_raw.shock.sum()):,}")
+    summ_o = []                       # how the cohort and the events change (aggregated counts only)
+    for nm_, prim_, alt_ in (("MIMIC-IV", fm_prim, fm_raw), ("eICU-CRD", fe_prim, fe_raw)):
+        kept_ = prim_[prim_.stay_id.isin(alt_.stay_id)]
+        r_ = {"dataset": nm_, "outcome": args.outcome, "stays_primary_cohort": len(prim_), "stays_removed": len(prim_) - len(alt_), "stays_kept": len(alt_),
+              "events_primary_in_kept": int(kept_.shock.sum()), "events_alt": int(alt_.shock.sum())}
+        for H_ in HORIZONS:
+            ep_ = set(kept_.stay_id[(kept_.shock == 1) & (kept_.hours_to_shock <= H_)]); ea_ = set(alt_.stay_id[(alt_.shock == 1) & (alt_.hours_to_shock <= H_)])
+            r_.update({f"events_primary_H{H_}": len(ep_), f"events_alt_H{H_}": len(ea_), f"events_in_both_H{H_}": len(ep_ & ea_)})
+        summ_o.append(r_)
+    pd.DataFrame(summ_o).to_csv(f"{LD}/outcome_cohort_summary.csv", index=False)
+    say(pd.DataFrame(summ_o).to_string(index=False))
 TRAIN_GROUPS = ["2008 - 2010", "2011 - 2013", "2014 - 2016"]
 DROP = ["stay_id", "subject_id", "hadm_id", "anchor_year_group", "race", "gender", "shock", "hours_to_shock"]
 FEATS = [c for c in fm_raw.columns if c not in DROP]
