@@ -19,6 +19,8 @@ Code for the manuscript "How design choices inflate apparent performance in earl
 | `tests/test_zhou.py`, `tests/synthetic_zhou.py` | Tests of `zhou_design_analysis.py` on synthetic tables: cohort rules, shock onset and every feature column against an independent pandas implementation, self-checks accept good and reject corrupted primary tables, no use of records at or after t0 + 24 h, whole pipeline and direction of the effects. No patient data. |
 | `scripts/diagnose_sofa.py`, `diagnose_cns.py`, `diagnose_gcs_missing.py`, `diagnose_gcs_raw.py` | Diagnostics of why SOFA and qSOFA performed at or below chance in MIMIC-IV. |
 | `scripts/sensitivity_future_info.py` | Re-evaluates saved predictions in stays whose infection criterion was already fulfilled at the prediction time. |
+| `scripts/window_cumulative.py`, `tests/test_edges.py` | Window designs that separate the end of the predictor window from its length (B, B_wide, C, C_star, B_short, C_short, with and without the outcome-defining inputs), paired contrasts, and the lead-time analysis with symmetric conditioning. `--test_groups` and `--tag` restrict the test set to given anchor-year groups. |
+| `scripts/revision_audits.py` | Lactate measurement by outcome, AUROC by calendar period, and eICU-CRD hospital recording audit (aggregated outputs only). |
 | `requirements.txt` | Package versions of the run reported in the manuscript. |
 
 ## Order of execution
@@ -42,4 +44,4 @@ Aggregated tables and figures only (CSV, PNG, `results_summary.txt`, `results_st
 
 - Data: PhysioNet credentialed data use agreements (MIMIC-IV, eICU-CRD).
 - Licence: MIT (see `LICENSE`).
-- Citation: cite the Zenodo record of the release you use. v1.0.0: 10.5281/zenodo.23823508; v1.1.0: 10.5281/zenodo.23966353; the DOI of v1.2.0 is added after its release.
+- Citation: cite the Zenodo record of the release you use. v1.0.0: 10.5281/zenodo.23823508; v1.1.0: 10.5281/zenodo.23966353; v1.2.0: 10.5281/zenodo.24053027; the DOI of v1.3.0 is added after its release.
