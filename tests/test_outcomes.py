@@ -44,7 +44,7 @@ def test_rules():
             rows.append(pd.DataFrame({"stay_id": sid, "hr": hr, "lactate": lac, "any_pressor": p}))
         df = pd.concat(rows, ignore_index=True); con = duckdb.connect(); con.register("h", df)
         assert od.grid_gaps(con, "h", is_ts) == 0
-        for rule in od.RULES:
+        for rule in [r for r in od.RULES if r != "primary_post"]:
             got = od.onset_frame(con, "h", rule, is_ts).set_index("stay_id")["onset"].sort_index()
             exp = oracle(df, rule).sort_index()
             assert list(got.index) == list(exp.index), (rule, is_ts, len(got), len(exp))
@@ -118,6 +118,11 @@ def test_end_to_end():
                     assert sm.loc[nm, "events_alt"] - sm.loc[nm, "events_primary_in_kept"] == np2, (rule, nm, sm.loc[nm].to_dict())
             n_alt = pd.read_csv(f"{d}/ladder_design_ns.csv")
             assert (n_alt.events > prim.events).all() or rule == "vaso_2h"
+        code, log = run(common + ["--outcome", "primary_post"]); assert code == 0, log[-3000:]
+        assert "reproduces shock and hours_to_shock of the primary features: OK" in log, log[-2000:]
+        sm = pd.read_csv(f"{tmp}/ladder_outcome_primary_post/outcome_cohort_summary.csv").set_index("dataset")
+        for nm in ("MIMIC-IV", "eICU-CRD"):          # strict rule: same stays, never more events than the primary rule
+            assert sm.loc[nm, "stays_removed"] == 0 and sm.loc[nm, "events_alt"] <= sm.loc[nm, "events_primary_in_kept"], sm.loc[nm].to_dict()
         code, log = run(common + ["--outcome", "primary_kept_vaso_any"]); assert code == 0, log[-3000:]
         sm = pd.read_csv(f"{tmp}/ladder_outcome_primary_kept_vaso_any/outcome_cohort_summary.csv").set_index("dataset")
         for ds, nm in (("mimic", "MIMIC-IV"), ("eicu", "eICU-CRD")):       # control: same stays as vaso_any, primary labels

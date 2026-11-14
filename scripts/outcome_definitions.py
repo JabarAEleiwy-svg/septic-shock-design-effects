@@ -11,20 +11,33 @@ Rules (onset = the hour that is labelled as shock onset; the first hour that sat
   vaso_any  any_pressor = 1                                                            (no lactate in the outcome)
   vaso_2h   any_pressor = 1 at hour t AND at hour t+1                                   (no lactate; a vasopressor that
             runs for at least two consecutive hours, which excludes brief peri-procedural exposures)
-Both alternatives do not use lactate at all.  onset(vaso_any) <= onset(primary) for every stay.
+  primary_post  as primary, but (i) the onset hour must be AFTER the index hour and (ii) only lactate values from hours after the index hour
+            (hr > index, i.e. charted at or after the prediction time of design B) may satisfy lactate > 2.  Under this rule no lactate that
+            is available to design B can contribute to the label, so B has no overlap with the outcome definition by construction.
+            Needs the index hour of every stay (argument `index`).
+Both alternatives vaso_any / vaso_2h do not use lactate at all.  onset(vaso_any) <= onset(primary) for every stay.
 
 Input table columns: stay_id, hr, lactate, any_pressor.  `hr` is a TIMESTAMP on an hourly grid (MIMIC-IV) or an integer hour
 (eICU-CRD); `hr_is_ts` tells which.  The grid must be contiguous per stay (checked by `grid_gaps`).
 """
 import duckdb, pandas as pd
 
-RULES = ("primary", "vaso_any", "vaso_2h")
+RULES = ("primary", "vaso_any", "vaso_2h", "primary_post")
 
 
-def onset_frame(con, src, rule, hr_is_ts):
+def onset_frame(con, src, rule, hr_is_ts, index=None):
     """DataFrame(stay_id, onset) for stays that have an onset under `rule`.  `src` is a SQL table or read_parquet(...) expression."""
     if rule not in RULES: raise ValueError(rule)
     step = "INTERVAL '1 hour'" if hr_is_ts else "1"
+    if rule == "primary_post":
+        if index is None: raise ValueError("rule primary_post needs index = Series stay_id -> index hour")
+        con.register("_idx_tbl", pd.DataFrame({"stay_id": index.index.values, "idx": index.values}))
+        q = f"""SELECT stay_id, MIN(hr) AS onset FROM (
+                  SELECT s.stay_id, s.hr, s.any_pressor, i.idx,
+                         MAX(CASE WHEN s.hr > i.idx THEN s.lactate END) OVER (PARTITION BY s.stay_id ORDER BY s.hr ROWS BETWEEN 6 PRECEDING AND 6 FOLLOWING) AS lac_win
+                  FROM {src} s JOIN _idx_tbl i USING (stay_id))
+                WHERE any_pressor = 1 AND hr > idx AND lac_win > 2 GROUP BY stay_id"""
+        return con.execute(q).df()
     if rule == "primary":
         q = f"""SELECT stay_id, MIN(hr) AS onset FROM (
                   SELECT stay_id, hr, any_pressor,

@@ -54,8 +54,9 @@ ap.add_argument("--rf_trees", type=int, default=500)
 ap.add_argument("--seed", type=int, default=42)
 ap.add_argument("--model", default="RF", choices=["RF", "LightGBM"],
                 help="learner used in every design (hyper-parameters fixed, identical to extended_analysis_v3.py); outputs go to ladder/ (RF) or ladder_lightgbm/")
-ap.add_argument("--outcome", default="primary", choices=["primary", "vaso_any", "vaso_2h", "primary_kept_vaso_any", "primary_kept_vaso_2h"],
+ap.add_argument("--outcome", default="primary", choices=["primary", "vaso_any", "vaso_2h", "primary_post", "primary_kept_vaso_any", "primary_kept_vaso_2h", "primary_kept_primary_post"],
                 help="outcome definition (sensitivity analysis, see outcome_definitions.py): primary = vasopressor and lactate > 2 (manuscript); "
+                     "primary_post = primary outcome in which only lactate charted after the index hour may qualify (no lactate available to design B can contribute to the label); "
                      "vaso_any / vaso_2h = vasopressor only (any / at least 2 consecutive hours), no lactate in the outcome. Same stays, same features; only the label "
                      "changes. Requires the landmark tables of the primary run in ladder/. Outputs go to ladder_outcome_<name>[_lightgbm]/. "
                      "primary_kept_<rule> is the CONTROL: the primary outcome (vasopressor and lactate > 2) on exactly the stays that remain under <rule>, so that the effect of the "
@@ -228,7 +229,7 @@ if args.outcome != "primary":
     if not same: sys.exit("Outcome derivation does not reproduce the primary labels; do not use this run.")
     CONTROL = args.outcome.startswith("primary_kept_"); RULE = args.outcome.replace("primary_kept_", "") if CONTROL else args.outcome
     fm_prim = fm_raw.copy()
-    fm_raw = od.relabel(fm_raw, idx_m, od.onset_frame(con_o, src_m, RULE, True), "MIMIC " + RULE, log=_l)
+    fm_raw = od.relabel(fm_raw, idx_m, od.onset_frame(con_o, src_m, RULE, True, index=idx_m), "MIMIC " + RULE, log=_l)
     if CONTROL: fm_raw = fm_prim[fm_prim.stay_id.isin(fm_raw.stay_id)].copy(); _l(f"[MIMIC control] primary outcome kept on the {len(fm_raw):,} stays that remain under {RULE}; events {int(fm_raw.shock.sum()):,}")
     # eICU-CRD: hr is an integer hour; index hour = hours_icu_to_pred - 1
     src_e = f"read_parquet('{OUT}/sofa_hourly_eicu.parquet')"
@@ -240,7 +241,7 @@ if args.outcome != "primary":
     say(f"[eICU] primary outcome re-derived from sofa_hourly_eicu reproduces shock and hours_to_shock of the primary features: {'OK' if same else 'MISMATCH - STOP'}")
     if not same: sys.exit("Outcome derivation does not reproduce the primary labels; do not use this run.")
     fe_prim = fe_raw.copy()
-    fe_raw = od.relabel(fe_raw, idx_e, od.onset_frame(con_o, src_e, RULE, False), "eICU " + RULE, log=_l)
+    fe_raw = od.relabel(fe_raw, idx_e, od.onset_frame(con_o, src_e, RULE, False, index=idx_e), "eICU " + RULE, log=_l)
     if CONTROL: fe_raw = fe_prim[fe_prim.stay_id.isin(fe_raw.stay_id)].copy(); _l(f"[eICU control] primary outcome kept on the {len(fe_raw):,} stays that remain under {RULE}; events {int(fe_raw.shock.sum()):,}")
     summ_o = []                       # how the cohort and the events change (aggregated counts only)
     for nm_, prim_, alt_ in (("MIMIC-IV", fm_prim, fm_raw), ("eICU-CRD", fe_prim, fe_raw)):
