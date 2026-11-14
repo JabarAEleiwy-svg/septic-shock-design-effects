@@ -1,6 +1,10 @@
 # Changelog
 
-## v1.3.0 (DOI to be added after the release)
+## v1.3.1 (DOI to be added after the release)
+
+- `scripts/lab_linkage_audit.py` (new): audit of how MIMIC-IV laboratory measurements were linked to ICU stays. The extraction links `labevents` by `subject_id` and time window, not by `hadm_id`; the script counts the rows and stays whose laboratory row has the admission identifier of the stay, no admission identifier, or the identifier of another admission, in the hourly-SOFA/outcome window and in the predictor window, and the stays in which the last lactate and last creatinine would change if rows of another admission were removed. Only aggregated outputs are written.
+
+## v1.3.0 (DOI 10.5281/zenodo.24221633)
 
 - `scripts/window_cumulative.py` (new): window designs that separate the end of the predictor window from its length (B, B_wide, C, C_star, B_short, C_short, each also without vasopressor-derived and lactate inputs), paired cluster-bootstrap contrasts, three random-forest seeds, data-availability table, and the lead-time analysis with symmetric conditioning of non-events (evaluation only). The rebuilt features are checked against the primary and ladder feature tables before any model is fitted. Options `--test_groups` and `--tag` restrict the MIMIC-IV test set to given anchor-year groups (calendar-period sensitivity).
 - `scripts/revision_audits.py` (new): (1) lactate measurement by outcome and the stays with a vasopressor after the index hour but no lactate within +-6 h of any vasopressor hour (cannot be classified as shock); (2) AUROC of the primary models by anchor-year group; (3) eICU-CRD recording of vasopressors and lactate by hospital and AUROC in hospital subsets. The primary outcome is re-derived from the hourly tables and must reproduce the labels, otherwise the run stops. Only aggregated outputs are written.
