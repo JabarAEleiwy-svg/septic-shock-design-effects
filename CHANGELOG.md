@@ -1,5 +1,10 @@
 # Changelog
-## v1.3.2 (documentation and environment only; DOI to be added after the release)
+## v1.3.3 (DOI to be added after the release)
+
+- `scripts/post_onset_exposure.py` (new): for event stays in the evaluation sets (MIMIC-IV temporal test, eICU-CRD external), computes how much of the design-C predictor window lies after shock onset (hours after onset, share of stays with a vital sign, laboratory value or lactate after the onset hour, SOFA input hour, vasopressor running at the last predictor hour), with design B as a check. It stops if the onset derived from the hourly tables does not match `outcome_definitions.onset_frame`. Only aggregated outputs are written (manuscript Table A21).
+- `tests/test_post_onset.py` (new): compares the script with a brute-force computation on synthetic tables. No existing script or result changed.
+
+## v1.3.2 (documentation and environment only; DOI 10.5281/zenodo.24368485)
 
 - `README.md`: manuscript title updated to the current title and a scope sentence added.
 - `requirements.txt`: all packages pinned to the Colab environment (`pip freeze`, Python 3.13.16), including pyarrow, matplotlib, joblib and torch; the 30 October run printed numpy 2.1.3. No code, script or result changed.
