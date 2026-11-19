@@ -1,5 +1,8 @@
 # Changelog
+## v1.3.2 (documentation and environment only; DOI to be added after the release)
 
+- `README.md`: manuscript title updated to the current title and a scope sentence added.
+- `requirements.txt`: all packages pinned to the Colab environment (`pip freeze`, Python 3.13.16), including pyarrow, matplotlib, joblib and torch; the 30 October run printed numpy 2.1.3. No code, script or result changed.
 ## v1.3.1 (DOI to be added after the release)
 
 - `scripts/lab_linkage_audit.py` (new): audit of how MIMIC-IV laboratory measurements were linked to ICU stays. The extraction links `labevents` by `subject_id` and time window, not by `hadm_id`; the script counts the rows and stays whose laboratory row has the admission identifier of the stay, no admission identifier, or the identifier of another admission, in the hourly-SOFA/outcome window and in the predictor window, and the stays in which the last lactate and last creatinine would change if rows of another admission were removed. Only aggregated outputs are written.
