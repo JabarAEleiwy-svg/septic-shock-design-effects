@@ -1,5 +1,8 @@
-# versions printed by extended_analysis_v3.py in the Google Colab run of 30 October 2026
-numpy==2.1.3
+# Environment of the Google Colab runs (Python 3.13.16), captured with `pip freeze` on 19 November 2026.
+# The primary run of 30 October 2026 printed numpy 2.1.3; the other packages it printed (pandas, scipy, scikit-learn,
+# statsmodels, lightgbm, xgboost, shap, duckdb) are unchanged. extended_analysis_v3.py flags a MISMATCH if the primary
+# random-forest AUROC does not reproduce within 0.005.
+numpy==2.4.6
 pandas==2.2.3
 scipy==1.16.3
 scikit-learn==1.6.1
@@ -8,7 +11,7 @@ lightgbm==4.6.0
 xgboost==3.4.1
 shap==0.54.1
 duckdb==1.3.2
-pyarrow
-matplotlib
-joblib
-torch   # sequence_analysis.py (tested with 2.15.0, CPU); on Colab it is preinstalled
+pyarrow==23.0.1
+matplotlib==3.10.0
+joblib==1.6.0
+torch==2.14.1   # sequence_analysis.py; the GPU run used 2.14.1+cu130 (CUDA 13.0 wheel); the script was also tested with a CPU build, 2.15.0
