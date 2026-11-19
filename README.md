@@ -1,6 +1,6 @@
 # Septic shock prediction: design effects in MIMIC-IV and eICU-CRD
 
-Code for the manuscript "How design choices inflate apparent performance in early septic shock prediction: a controlled analysis across MIMIC-IV and eICU-CRD".
+Code for the manuscript "Predictor timing, outcome overlap and lead time shape apparent septic-shock prediction performance: a controlled analysis in MIMIC-IV and eICU-CRD". The study quantifies design effects within one cohort; it does not show that published results are inflated.
 
 **No patient-level data, predictions or trained models are in this repository.** MIMIC-IV v3.1 and eICU-CRD v2.0 are available only to credentialed users through PhysioNet (https://physionet.org). Anyone who runs this code needs their own approved access.
 
