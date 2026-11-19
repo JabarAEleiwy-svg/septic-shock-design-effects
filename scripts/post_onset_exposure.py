@@ -57,6 +57,11 @@ def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True); ap.add_argument("--horizons", default="6,24")
     a = ap.parse_args(argv); OUT = a.out; HZ = [int(x) for x in a.horizons.split(",") if x.strip()]
+    need = ["features_mimic", "features_eicu", "cohort_final_mimic", "cohort_eicu", "chart_sub", "lab_sub", "sofa_hourly",
+            "eicu_vitalp_sub", "eicu_vitala_sub", "eicu_lab_sub", "sofa_hourly_eicu"]
+    missing = [f for f in need if not os.path.exists(os.path.join(OUT, f + ".parquet"))]
+    if missing:                                           # checked BEFORE anything is created, so a wrong --out leaves no stray folders behind
+        sys.exit(f"--out = {OUT!r}: these input files are missing: {missing}. Mount Google Drive and check the folder name; nothing was created.")
     ODIR = os.path.join(OUT, "post_onset"); os.makedirs(ODIR, exist_ok=True); LOG = open(os.path.join(ODIR, "post_onset_log.txt"), "w")
     def say(*x):
         s = " ".join(str(i) for i in x); print(s); LOG.write(s + "\n"); LOG.flush()
