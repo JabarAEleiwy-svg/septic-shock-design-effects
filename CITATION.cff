@@ -1,0 +1,27 @@
+cff-version: 1.2.0
+message: "If you use this code, please cite the archived release (Zenodo) and the manuscript."
+title: "Septic shock prediction: design effects in MIMIC-IV and eICU-CRD"
+abstract: >-
+  Code for the manuscript "Predictor timing, outcome overlap and lead time shape
+  apparent septic-shock prediction performance: a controlled analysis in MIMIC-IV
+  and eICU-CRD". No patient-level data, predictions or trained models are included.
+type: software
+authors:
+  - family-names: Eleiwy
+    given-names: Jabbar Abed
+    orcid: "https://orcid.org/0000-0002-7442-1719"
+    email: Jabar.A.Eleiwy@uotechnology.edu.iq
+    affiliation: "Applied Sciences Research Unit, University of Technology-Iraq, Baghdad, Iraq; Department of Electronic and Electrical Engineering, Brunel University of London, United Kingdom"
+  - family-names: Cosmas
+    given-names: John
+    orcid: "https://orcid.org/0000-0003-4378-5576"
+    affiliation: "Department of Electronic and Electrical Engineering, Brunel University of London, United Kingdom"
+repository-code: "https://github.com/JabarAEleiwy-svg/septic-shock-design-effects"
+license: MIT
+keywords:
+  - septic shock
+  - sepsis
+  - prediction model
+  - external validation
+  - MIMIC-IV
+  - eICU-CRD
